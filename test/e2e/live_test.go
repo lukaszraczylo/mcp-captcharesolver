@@ -12,6 +12,7 @@ import (
 	"image/png"
 	"os"
 	"os/exec"
+	"strconv"
 	"testing"
 	"time"
 
@@ -51,16 +52,32 @@ func TestLiveSolveGrid(t *testing.T) {
 	}
 	defer func() { _ = session.Close() }()
 
+	args := map[string]any{
+		"screenshot":   b64,
+		"instruction":  "Select every tile that is solid red.",
+		"rows":         rows,
+		"cols":         cols,
+		"image_width":  size,
+		"image_height": size,
+	}
+	// Optional accuracy knobs, settable for live tuning.
+	if v := os.Getenv("CAPTCHA_E2E_SAMPLES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			args["samples"] = n
+		}
+	}
+	if v := os.Getenv("CAPTCHA_E2E_UPSCALE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			args["upscale"] = n
+		}
+	}
+	if os.Getenv("CAPTCHA_E2E_ANNOTATE") == "1" {
+		args["annotate"] = true
+	}
+
 	res, err := session.CallTool(ctx, &mcp.CallToolParams{
-		Name: "solve_grid_captcha",
-		Arguments: map[string]any{
-			"screenshot":   b64,
-			"instruction":  "Select every tile that is solid red.",
-			"rows":         rows,
-			"cols":         cols,
-			"image_width":  size,
-			"image_height": size,
-		},
+		Name:      "solve_grid_captcha",
+		Arguments: args,
 	})
 	if err != nil {
 		t.Fatalf("call: %v", err)
