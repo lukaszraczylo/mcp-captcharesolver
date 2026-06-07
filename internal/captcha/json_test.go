@@ -27,6 +27,16 @@ func TestExtractJSON(t *testing.T) {
 		},
 		{"no brace", `no json here`, `no json here`},
 		{"unbalanced returns from start", `tail {"text":"x"`, `{"text":"x"`},
+		{
+			"think block stripped, real object wins",
+			"<think>reasoning with {\"tiles\":[9]}</think>\n{\"tiles\":[0,1,2],\"confidence\":0.9}",
+			`{"tiles":[0,1,2],"confidence":0.9}`,
+		},
+		{
+			"thinking block stripped",
+			`<thinking>let me reason {"tiles":[5]}</thinking>{"text":"ab12"}`,
+			`{"text":"ab12"}`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
