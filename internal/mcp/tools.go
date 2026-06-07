@@ -132,11 +132,21 @@ func (h *Handlers) solveRotation(ctx context.Context, _ *mcp.CallToolRequest, in
 // ---- stealth tools ----
 
 type StealthScriptIn struct {
-	Engine string `json:"engine,omitempty" jsonschema:"playwright | cdp | generic"`
+	Seed    uint64 `json:"seed,omitempty" jsonschema:"use the same seed as generate_fingerprint to keep the injected script and applied profile consistent"`
+	OS      string `json:"os,omitempty" jsonschema:"windows | macos | linux — use the same os/browser/locale/seed as generate_fingerprint, or read the returned fingerprint, to keep the injected script and applied profile consistent"`
+	Browser string `json:"browser,omitempty" jsonschema:"chrome"`
+	Locale  string `json:"locale,omitempty" jsonschema:"BCP-47 locale e.g. en-US, en-GB — use the same locale as generate_fingerprint for a coherent profile"`
+	Engine  string `json:"engine,omitempty" jsonschema:"playwright | cdp | generic"`
 }
 
 func (h *Handlers) stealthScript(_ context.Context, _ *mcp.CallToolRequest, in StealthScriptIn) (*mcp.CallToolResult, stealth.ScriptResult, error) {
-	return nil, stealth.StealthScript(stealth.ScriptParams{Engine: in.Engine}), nil
+	return nil, stealth.StealthScript(stealth.ScriptParams{
+		OS:      in.OS,
+		Browser: in.Browser,
+		Locale:  in.Locale,
+		Seed:    in.Seed,
+		Engine:  in.Engine,
+	}), nil
 }
 
 type FingerprintIn struct {
