@@ -29,6 +29,10 @@ const REPO_ROOT = path.resolve(__dirname, '../../..');
 const TARGET_URL = 'https://2captcha.com/demo/recaptcha-v2';
 const CAPTCHA_BIN = process.env.CAPTCHA_BIN || path.join(REPO_ROOT, 'bin', 'captcha-solver-mcp');
 const HEADLESS = process.env.CAPTCHA_E2E_HEADLESS !== '0';
+// Opt-in headed/slow-mo mode. Real Google reCAPTCHA rarely mints a token in
+// headless Chromium; a headed window backed by a real browser profile improves
+// the odds. Set CAPTCHA_E2E_HEADED=1 to launch visible with slow-mo.
+const HEADED = process.env.CAPTCHA_E2E_HEADED === '1';
 const MAX_ROUNDS = 5; // dynamic grids re-render; cap the loop.
 
 const serverEnv = {
@@ -61,6 +65,18 @@ async function readToken(page) {
 }
 
 async function main() {
+  if (HEADED) {
+    log(
+      'headed mode ON (CAPTCHA_E2E_HEADED=1): launching a visible, slow-mo browser. ' +
+        'A headed/real-profile browser improves the odds of reCAPTCHA minting a token.',
+    );
+  } else {
+    log(
+      'headed mode OFF: running headless. Set CAPTCHA_E2E_HEADED=1 for a visible, ' +
+        'real-profile attempt that improves the odds of reCAPTCHA minting a token.',
+    );
+  }
+
   const mcp = new McpStdioClient(CAPTCHA_BIN, serverEnv);
   await mcp.initialize();
 
@@ -84,7 +100,9 @@ async function main() {
     .map((n) => parseInt(n, 10));
   const locale = (fp.fingerprint && fp.fingerprint.locale) || 'en-US';
 
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const browser = await chromium.launch(
+    HEADED ? { headless: false, slowMo: 80 } : { headless: HEADLESS },
+  );
   const context = await browser.newContext({
     userAgent,
     locale,
