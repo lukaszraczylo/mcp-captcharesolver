@@ -53,7 +53,7 @@ Copy `.env.example` as a starting point.
 
 | Variable | Required | Default | Notes |
 |----------|----------|---------|-------|
-| `CAPTCHA_LLM_PROVIDER` | yes | — | `anthropic` \| `openai` \| `openai-compatible` \| `gemini` |
+| `CAPTCHA_LLM_PROVIDER` | yes | — | `anthropic` \| `openai` \| `openai-compatible` \| `gemini` (all four fully implemented) |
 | `CAPTCHA_LLM_BASE_URL` | for `openai-compatible` | provider default | Endpoint override (local / Ollama / OpenRouter / gateway) |
 | `CAPTCHA_LLM_API_KEY` | yes\* | — | \*May be **empty** for a keyless local/gateway endpoint **when `BASE_URL` is set** |
 | `CAPTCHA_LLM_MODEL` | yes | — | Vision-capable model id (see compatibility notes) |
@@ -65,6 +65,12 @@ Copy `.env.example` as a starting point.
 
 > **Keyless gateways:** if you point `CAPTCHA_LLM_BASE_URL` at an OpenAI-compatible gateway
 > that does not require auth, leave `CAPTCHA_LLM_API_KEY` empty — startup will accept it.
+
+> **Gemini:** the `gemini` provider is **fully implemented** against Google's native
+> `generateContent` wire format (vision *and* audio) and is unit-tested. Live use needs a
+> real Google Gemini API key (`generativelanguage.googleapis.com`) — the project's
+> OpenAI-compatible test gateway can't exercise the native Gemini path, so it is covered by
+> unit tests against a mock endpoint rather than the live e2e suite.
 
 ## Tools
 
@@ -78,7 +84,7 @@ All nine tools are registered in `internal/mcp/server.go`. Every image/audio inp
 | `solve_audio_captcha` | `audio`, `language?` | `{text,confidence}`; errors clearly if provider has no transcription |
 | `solve_grid_captcha` | `screenshot`, `instruction`, `rows`, `cols`, `image_width?`, `image_height?`, `captcha_type?` | `{tiles,centroids?,confidence,recheck_recommended}` (reCAPTCHA v2 / hCaptcha) |
 | `solve_rotation_captcha` | `screenshot`, `instruction?` | `{choice,rotations,confidence}` (FunCaptcha, best-effort) |
-| `get_stealth_script` | `engine?` = `playwright`\|`cdp`\|`generic` | `{script,apply,included_evasions}` — JS init script + how to inject it |
+| `get_stealth_script` | `engine?` = `playwright`\|`cdp`\|`generic`, `os?`, `browser?`, `locale?`, `seed?` | `{script,apply,fingerprint,included_evasions}` — JS init script (templated to match `fingerprint`) + how to inject it |
 | `generate_fingerprint` | `os?`, `browser?`, `locale?`, `seed?` | `{fingerprint,header_set}` — coherent identity + matching headers (seeded = stable) |
 | `plan_interaction` | `actions`, `seed?` | humanized mouse/keyboard timeline (Bézier paths, jitter, cadence) |
 | `solver_info` | — | configured provider/model + per-type capability flags |
@@ -91,6 +97,12 @@ All nine tools are registered in `internal/mcp/server.go`. Every image/audio inp
   (set `CAPTCHA_LLM_AUDIO_MODEL`).
 - `plan_interaction` is designed to pair with grid centroids: feed it `click` actions at the
   tile centroids to produce human-looking pointer motion.
+- `get_stealth_script` accepts `os` / `browser` / `locale` / `seed` and returns a
+  `fingerprint` field. The injected evasion script's WebGL vendor/renderer,
+  `navigator.platform`, and `navigator.languages` are **templated to match that
+  fingerprint** (coherent), so the script and the identity tell the same story. Inject the
+  `script` and apply the returned `fingerprint` together — or call `get_stealth_script` and
+  `generate_fingerprint` with the **same `seed`** to get an identical, coherent pair.
 
 ## Captcha-type matrix
 
@@ -190,6 +202,9 @@ npx playwright install chromium
 make e2e-browser
 ```
 
+> Node deps are pinned by a single lockfile, **`package-lock.json`** (npm). Use `npm` to
+> install so the lockfile stays canonical.
+
 Two paths (`test/e2e/playwright/*.mjs`, wrapped by `test/e2e/browser_test.go`):
 
 - **Text captcha (`solve-text.mjs`) — verified end-to-end.** Screenshots the demo's
@@ -201,7 +216,10 @@ Two paths (`test/e2e/playwright/*.mjs`, wrapped by `test/e2e/browser_test.go`):
   `plan_interaction` → humanized clicks over the tile grid, and reads
   `g-recaptcha-response`. Real Google reCAPTCHA commonly resists headless automation, so
   this path **logs the outcome and exits 0 even with no token** — it fails only on a real
-  script/transport error.
+  script/transport error. Set **`CAPTCHA_E2E_HEADED=1`** to launch a visible, slow-mo
+  browser for a real-profile attempt that improves the odds of Google minting a token.
+  Headless reCAPTCHA v2 usually **won't** mint a token — that is inherent to Google's
+  defenses, not a bug in this harness.
 
 ## Compatibility notes
 
@@ -209,15 +227,20 @@ Two paths (`test/e2e/playwright/*.mjs`, wrapped by `test/e2e/browser_test.go`):
   with `max_completion_tokens` when a model (e.g. GPT-5.x) rejects `max_tokens`. This works
   transparently across old and new OpenAI-style backends — you don't configure anything.
 - **Prefer a vision-capable model** for the image/grid tools (e.g. `openai/gpt-5.4`,
-  `zai/GLM-4.6V-FlashX`). Reasoning models that emit `<think>…</think>` still work
-  (responses are JSON-extracted), but non-reasoning vision models give cleaner output.
+  `zai/GLM-4.6V-FlashX`). Reasoning models that emit `<think>…</think>` (or
+  `<thinking>…</thinking>`) are now **handled** — the scratchpad block is stripped *before*
+  JSON extraction, so a JSON-looking object inside the reasoning never gets mistaken for the
+  answer. Non-reasoning vision models still give the lowest latency.
 - **TLS/JA3 + HTTP/2 fingerprints are browser/proxy-level.** The stealth tools only
   *advise* on these — they cannot change them. To control them, terminate through a
   fingerprint-aware proxy or a browser build that emits the JA3/H2 profile you want.
 
 ## Roadmap / not yet built
 
-Two pieces are **designed but deferred** (see
+The **Gemini provider** and **WebGL/fingerprint coherence** are now **done** (see the
+Provider and Tools sections above); they are no longer on this list.
+
+One piece remains **designed but deferred** (see
 [`docs/superpowers/specs/`](./docs/superpowers/specs) and
 [`docs/superpowers/plans/`](./docs/superpowers/plans)):
 
@@ -226,8 +249,9 @@ Two pieces are **designed but deferred** (see
   CI without hitting real sites. A **live** browser harness already exists (`make
   e2e-browser`, see [Testing](#testing)): it targets the 2captcha demo, is
   network/browser-gated, verifies the text path end-to-end against the demo's success
-  indicator, and runs the reCAPTCHA v2 path best-effort. The remaining work is the
-  offline, deterministic local-page variant for CI.
-- **Gemini provider** — a stub exists (`internal/llm/gemini.go`); the `generateContent`
-  wire format still needs verification against current Google docs before it ships. Use
-  `openai` / `openai-compatible` / `anthropic` in the meantime.
+  indicator, and runs the reCAPTCHA v2 path best-effort (with an optional
+  `CAPTCHA_E2E_HEADED=1` real-profile attempt). The remaining work is the offline,
+  deterministic local-page variant for CI.
+
+> Note: headless reCAPTCHA v2 usually won't mint a token regardless of harness quality —
+> that is Google's anti-automation defense working as intended, not a defect here.
