@@ -16,6 +16,8 @@ import (
 
 var dataURIRe = regexp.MustCompile(`^data:([^;,]+)(;base64)?,(.*)$`)
 
+var fetchClient = &http.Client{Timeout: 30 * time.Second}
+
 // Point is a pixel coordinate.
 type Point struct {
 	X int
@@ -65,7 +67,7 @@ func fetchURL(url string) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := fetchClient.Do(req)
 	if err != nil {
 		return nil, "", err
 	}

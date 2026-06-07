@@ -10,16 +10,18 @@ import (
 
 // Config is the validated runtime configuration. Fields are ordered
 // largest-alignment-first to satisfy the fieldalignment linter.
+//
+// Temperature is intentionally not configurable: captcha solving is fixed at
+// temperature 0 for deterministic results (see the LLM provider request bodies).
 type Config struct {
-	Provider    string
-	BaseURL     string
-	APIKey      string
-	Model       string
-	AudioModel  string
-	LogLevel    string
-	Temperature float64
-	Timeout     time.Duration
-	MaxTokens   int
+	Provider   string
+	BaseURL    string
+	APIKey     string
+	Model      string
+	AudioModel string
+	LogLevel   string
+	Timeout    time.Duration
+	MaxTokens  int
 }
 
 var validProviders = map[string]bool{
@@ -46,13 +48,6 @@ func Load() (Config, error) {
 	}
 	if c.Model == "" {
 		return Config{}, fmt.Errorf("CAPTCHA_LLM_MODEL is required")
-	}
-	if v := os.Getenv("CAPTCHA_LLM_TEMPERATURE"); v != "" {
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return Config{}, fmt.Errorf("CAPTCHA_LLM_TEMPERATURE: %w", err)
-		}
-		c.Temperature = f
 	}
 	if v := os.Getenv("CAPTCHA_LLM_MAX_TOKENS"); v != "" {
 		n, err := strconv.Atoi(v)

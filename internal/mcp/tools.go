@@ -73,11 +73,15 @@ type SolveAudioIn struct {
 }
 
 func (h *Handlers) solveAudio(ctx context.Context, _ *mcp.CallToolRequest, in SolveAudioIn) (*mcp.CallToolResult, captcha.AudioResult, error) {
-	data, _, err := imageutil.Decode(in.Audio)
+	data, mt, err := imageutil.Decode(in.Audio)
 	if err != nil {
 		return nil, captcha.AudioResult{}, err
 	}
-	res, err := captcha.SolveAudio(ctx, h.llm, data, "audio.wav", in.Language)
+	filename := "audio.wav"
+	if mt == "audio/mpeg" {
+		filename = "audio.mp3"
+	}
+	res, err := captcha.SolveAudio(ctx, h.llm, data, filename, in.Language)
 	var unsupported llm.ErrUnsupported
 	if errors.As(err, &unsupported) {
 		return nil, captcha.AudioResult{}, fmt.Errorf("audio captcha unsupported: configured provider %q has no transcription; set CAPTCHA_LLM_PROVIDER=openai|gemini and CAPTCHA_LLM_AUDIO_MODEL", h.provider)
@@ -137,7 +141,7 @@ func (h *Handlers) stealthScript(_ context.Context, _ *mcp.CallToolRequest, in S
 
 type FingerprintIn struct {
 	OS      string `json:"os,omitempty" jsonschema:"windows | macos | linux"`
-	Browser string `json:"browser,omitempty" jsonschema:"chrome | firefox"`
+	Browser string `json:"browser,omitempty" jsonschema:"chrome (firefox not yet differentiated)"`
 	Locale  string `json:"locale,omitempty"`
 	Seed    uint64 `json:"seed,omitempty" jsonschema:"seed for a stable identity across runs"`
 }
@@ -152,7 +156,7 @@ func (h *Handlers) fingerprint(_ context.Context, _ *mcp.CallToolRequest, in Fin
 }
 
 type PlanInteractionIn struct {
-	Actions []stealth.Action `json:"actions" jsonschema:"clicks/types/scrolls to humanize"`
+	Actions []stealth.Action `json:"actions" jsonschema:"actions to humanize (click | type)"`
 	Seed    uint64           `json:"seed,omitempty"`
 }
 
@@ -170,7 +174,8 @@ type SolverInfoOut struct {
 }
 
 func (h *Handlers) solverInfo(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, SolverInfoOut, error) {
-	audio := h.provider == "openai" || h.provider == "openai-compatible" || h.provider == "gemini"
+	// gemini is a stub; re-add when implemented
+	audio := h.provider == "openai" || h.provider == "openai-compatible"
 	return nil, SolverInfoOut{
 		Provider: h.provider, Model: h.model,
 		Capabilities: map[string]bool{

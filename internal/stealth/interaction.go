@@ -7,7 +7,7 @@ import (
 
 // Action is a high-level target the caller wants to perform.
 type Action struct {
-	Type string `json:"type"` // click | type | scroll
+	Type string `json:"type"` // click | type
 	Text string `json:"text,omitempty"`
 	X    int    `json:"x,omitempty"`
 	Y    int    `json:"y,omitempty"`

@@ -21,8 +21,7 @@ func DetectHTML(html string) []Detection {
 			Type: "recaptcha_v3", Sitekey: m[1], LLMSolvable: false,
 			Notes: "score/behavioral — not LLM-solvable; needs browser reputation",
 		})
-	}
-	if strings.Contains(html, "g-recaptcha") || strings.Contains(html, "google.com/recaptcha/api2") {
+	} else if strings.Contains(html, "g-recaptcha") || strings.Contains(html, "google.com/recaptcha/api2") {
 		out = append(out, Detection{Type: "recaptcha_v2", Sitekey: firstSitekey(html), LLMSolvable: true,
 			Notes: "image-grid; LLM returns tiles, caller clicks + harvests token"})
 	}
@@ -34,7 +33,7 @@ func DetectHTML(html string) []Detection {
 		out = append(out, Detection{Type: "turnstile", Sitekey: firstSitekey(html), LLMSolvable: false,
 			Notes: "proof-of-work/behavioral — not LLM-solvable"})
 	}
-	if strings.Contains(html, "arkoselabs") || strings.Contains(html, "funcaptcha") || strings.Contains(html, "arkose") {
+	if strings.Contains(html, "arkoselabs") || strings.Contains(html, "funcaptcha") {
 		out = append(out, Detection{Type: "funcaptcha", Sitekey: firstPkey(html), LLMSolvable: true,
 			Notes: "rotation/visual — best-effort"})
 	}
