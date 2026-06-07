@@ -21,7 +21,8 @@ func SolveRotation(ctx context.Context, c llm.Client, img []byte, mediaType, ins
 		"You are solving a rotation/choice puzzle captcha. Instruction: %q. "+
 			"If asked to pick one image, return its 0-based index as choice. "+
 			"If asked to rotate, return the number of clockwise steps as rotations. "+
-			`Respond ONLY with compact JSON: {"choice":<int>,"rotations":<int>,"confidence":<0..1>}.`,
+			"First reason step-by-step about the correct orientation/choice, then give the final answer "+
+			`as the last thing you output: compact JSON {"choice":<int>,"rotations":<int>,"confidence":<0..1>}.`,
 		instruction)
 	raw, err := c.Vision(ctx, prompt, []llm.Image{{MediaType: mediaType, Data: img}}, llm.Options{})
 	if err != nil {

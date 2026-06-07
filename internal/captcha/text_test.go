@@ -31,3 +31,21 @@ func TestSolveTextRetriesOnGarbage(t *testing.T) {
 		t.Fatalf("expected 2 attempts (one retry), got %d", len(f.VisionCalls))
 	}
 }
+
+func TestSolveTextVoting(t *testing.T) {
+	f := &llm.Fake{VisionResponses: []string{
+		`{"text":"ab12","confidence":0.7}`,
+		`{"text":"ab12","confidence":0.7}`,
+		`{"text":"ab13","confidence":0.9}`,
+	}}
+	res, err := SolveText(context.Background(), f, []byte{1}, "image/png", TextOptions{Samples: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Text != "ab12" {
+		t.Fatalf("voted text %q, want ab12", res.Text)
+	}
+	if len(f.VisionCalls) != 3 {
+		t.Fatalf("expected 3 vision calls, got %d", len(f.VisionCalls))
+	}
+}
