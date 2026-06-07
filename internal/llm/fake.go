@@ -8,6 +8,7 @@ type Fake struct {
 	TranscribeResp  string
 	VisionErr       error
 	TranscribeErr   error
+	VisionResponses []string
 	VisionCalls     []VisionCall
 	TranscribeCalls []TranscribeCall
 }
@@ -26,9 +27,21 @@ type TranscribeCall struct {
 	Audio    []byte
 }
 
-// Vision implements Client.
+// Vision implements Client. When VisionResponses is non-empty it returns the
+// element matching the call index (clamped to the last for calls beyond the
+// slice length); otherwise it falls back to VisionResp.
 func (f *Fake) Vision(_ context.Context, prompt string, images []Image, opts Options) (string, error) {
+	i := len(f.VisionCalls)
 	f.VisionCalls = append(f.VisionCalls, VisionCall{Prompt: prompt, Images: images, Opts: opts})
+	if f.VisionErr != nil {
+		return "", f.VisionErr
+	}
+	if len(f.VisionResponses) > 0 {
+		if i >= len(f.VisionResponses) {
+			i = len(f.VisionResponses) - 1
+		}
+		return f.VisionResponses[i], nil
+	}
 	return f.VisionResp, f.VisionErr
 }
 
