@@ -3,4 +3,4 @@ dist/
 *.log
 .env
 bin/
-captcha-solver-mcp
+/captcha-solver-mcp
