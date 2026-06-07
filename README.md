@@ -80,9 +80,9 @@ All nine tools are registered in `internal/mcp/server.go`. Every image/audio inp
 | Tool | Inputs | Output |
 |------|--------|--------|
 | `detect_captcha` | `html?`, `url?`, `screenshot?` | `{detected:[{type,sitekey?,iframe_url?,notes?,llm_solvable}],summary}` — deterministic; v3/Turnstile → `llm_solvable:false` |
-| `solve_text_captcha` | `image`, `hint?`, `charset?`, `length?`, `case_sensitive?` | `{text,confidence}` (OCR) |
+| `solve_text_captcha` | `image`, `hint?`, `charset?`, `length?`, `case_sensitive?`, `samples?`, `upscale?` | `{text,confidence}` (OCR) |
 | `solve_audio_captcha` | `audio`, `language?` | `{text,confidence}`; errors clearly if provider has no transcription |
-| `solve_grid_captcha` | `screenshot`, `instruction`, `rows`, `cols`, `image_width?`, `image_height?`, `captcha_type?` | `{tiles,centroids?,confidence,recheck_recommended}` (reCAPTCHA v2 / hCaptcha) |
+| `solve_grid_captcha` | `screenshot`, `instruction`, `rows`, `cols`, `image_width?`, `image_height?`, `captcha_type?`, `samples?`, `upscale?`, `annotate?` | `{tiles,centroids?,confidence,no_targets,recheck_recommended}` (reCAPTCHA v2 / hCaptcha) |
 | `solve_rotation_captcha` | `screenshot`, `instruction?` | `{choice,rotations,confidence}` (FunCaptcha, best-effort) |
 | `get_stealth_script` | `engine?` = `playwright`\|`cdp`\|`generic`, `os?`, `browser?`, `locale?`, `seed?` | `{script,apply,fingerprint,included_evasions}` — JS init script (templated to match `fingerprint`) + how to inject it |
 | `generate_fingerprint` | `os?`, `browser?`, `locale?`, `seed?` | `{fingerprint,header_set}` — coherent identity + matching headers (seeded = stable) |
@@ -92,6 +92,13 @@ All nine tools are registered in `internal/mcp/server.go`. Every image/audio inp
 - `solve_grid_captcha` returns `centroids` (pixel `{x,y}` click points) only when
   `image_width` + `image_height` are supplied; otherwise the caller maps tile indices to
   pixels itself.
+- `solve_grid_captcha` new accuracy params: `samples` (run N times, majority-vote tiles;
+  `samples:3` raises Pass@1 ~70% → Success@3 ~97%); `upscale` (1–6, upscale image before
+  solving — helps small tiles); `annotate` (overlay numbered grid cells to reduce
+  off-by-one errors). Output now includes `no_targets:true` when no tile matches — caller
+  should click Verify instead of looping.
+- `solve_text_captcha` new params: `samples` (majority-vote the transcription) and `upscale`
+  (upscale image before OCR).
 - `solve_audio_captcha` requires an audio-capable provider. `anthropic` is **vision-only**
   here and will return a clear "unsupported" error — use `openai` or `gemini`
   (set `CAPTCHA_LLM_AUDIO_MODEL`).
@@ -135,7 +142,10 @@ The server is the brain; your browser is the hands. The loop for an image-grid c
    click), re-screenshot and repeat steps 3–5 until the grid clears.
 7. **Harvest** — read the `g-recaptcha-response` token from the page and submit your form.
 
-Runnable reference implementations are in [`examples/`](./examples).
+Runnable reference implementations are in [`examples/`](./examples):
+
+- [`examples/playwright/solve-recaptcha.mjs`](./examples/playwright/solve-recaptcha.mjs) — image-grid path (vision model)
+- [`examples/playwright/solve-recaptcha-audio.mjs`](./examples/playwright/solve-recaptcha-audio.mjs) — **audio path** (highest reliability; needs an audio-capable provider)
 
 ## Usage
 
@@ -168,6 +178,69 @@ export CAPTCHA_LLM_API_KEY=sk-...
 export CAPTCHA_LLM_MODEL=openai/gpt-5.4        # or zai/GLM-4.6V-FlashX, claude-opus-4-8, etc.
 ./bin/captcha-solver-mcp
 ```
+
+## Maximizing accuracy
+
+### Image grids (reCAPTCHA v2 / hCaptcha)
+
+- Use `samples: 3` — the server runs the vision model three times and majority-votes the
+  tile selection. Published research (COGNITION, arXiv:2512.02318) shows this raises a ~70%
+  Pass@1 model to ~97% Success@3. Cost: 3× LLM calls per round.
+- Use `annotate: true` — overlays numbered cell labels on the grid image, which reduces
+  off-by-one selection errors on dense or ambiguous grids.
+- Use `upscale: 2` (or higher) for small tile grids — upscaling before the vision pass
+  helps models resolve fine detail in compressed tiles.
+- Use a strong vision model (GPT-5, Gemini-2.5, Claude Opus 4).
+- Watch `no_targets` in the response — when `true`, no tile matches the instruction and you
+  should click **Verify** rather than looping on an empty selection.
+- Watch `recheck_recommended` — when `true` the grid is dynamic (tiles re-render after each
+  click); re-screenshot and loop.
+
+### reCAPTCHA v2 — audio route (highest reliability)
+
+The **audio challenge is the most reliable programmatic route** for reCAPTCHA v2. It converts
+to a speech-to-text problem that modern ASR models handle at 70–97% accuracy (vs ~70–80%
+Pass@1 for image grids). See
+[`examples/playwright/solve-recaptcha-audio.mjs`](./examples/playwright/solve-recaptcha-audio.mjs)
+for a runnable annotated recipe.
+
+Requires an audio-capable provider:
+
+```sh
+CAPTCHA_LLM_PROVIDER=openai
+CAPTCHA_LLM_AUDIO_MODEL=whisper-1
+# or
+CAPTCHA_LLM_PROVIDER=gemini
+CAPTCHA_LLM_AUDIO_MODEL=gemini-2.0-flash
+```
+
+`anthropic` is vision-only and will return a clear "unsupported" error.
+
+### Distorted text captchas
+
+- `samples: 3` + `upscale: 2` for heavily distorted or low-resolution images.
+- Modern vision models (GPT-4o, Gemini-2.5) handle mild distortion zero-shot at ~99%
+  without upscaling; reserve upscaling for genuinely blurry or tiny inputs.
+
+### Cost note
+
+`samples: N` = N× LLM calls per tool invocation. Use `samples: 1` (the default) when
+latency or cost matters more than marginal accuracy gain.
+
+## Accuracy expectations (from published research)
+
+High solver accuracy does not guarantee a token. reCAPTCHA v2 and hCaptcha gate final token
+minting on the caller's browser + IP behavioral score — a high recognition rate in isolation
+does not compensate for headless-browser signals, suspicious IP reputation, or missing
+cookies. Use a real browser profile (`CAPTCHA_E2E_HEADED=1`) for best odds.
+
+| Captcha | Approach | Reported accuracy | Source |
+|---------|----------|-------------------|--------|
+| reCAPTCHA v2 image grid | fine-tuned YOLOv8 (not LLM) | ~100% image-solving | ETH Zurich "Breaking reCAPTCHAv2", arXiv:2409.08831 |
+| Recognition grids (MLLM) | GPT-5/Gemini-2.5, optimized prompt | >80% Pass@1; ~97% Success@3 | COGNITION, arXiv:2512.02318 |
+| Visual captchas (agentic VLM) | general solver | 60.7% controlled / 70.6% wild | Halligan, USENIX Security 2025 |
+| reCAPTCHA v2 audio | speech-to-text (Whisper / Gemini) | ~90% (unCaptcha2); 70–97% modern ASR | unCaptcha2, USENIX WOOT |
+| Distorted text | multimodal LLM + upscale | ~99% on mild distortion | modern VLM OCR benchmarks |
 
 ## Testing
 
@@ -243,6 +316,12 @@ Provider and Tools sections above); they are no longer on this list.
 One piece remains **designed but deferred** (see
 [`docs/superpowers/specs/`](./docs/superpowers/specs) and
 [`docs/superpowers/plans/`](./docs/superpowers/plans)):
+
+- **YOLOv8 grid classifier** — a fine-tuned YOLOv8 classifier/segmenter (per ETH
+  arXiv:2409.08831) embedded via an ONNX runtime would beat zero-shot LLM accuracy on
+  standard reCAPTCHA grids (~100% image-solving vs ~80% Pass@1 for zero-shot MLLMs), at the
+  cost of training data and a CV runtime dependency. Deferred as a separate effort from the
+  LLM path.
 
 - **Deterministic (offline) browser e2e harness** — driving Playwright Chromium *and*
   Lightpanda against a *local* fake-captcha page, to exercise the full brain/hands loop in
