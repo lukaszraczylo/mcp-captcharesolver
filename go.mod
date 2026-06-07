@@ -2,7 +2,10 @@ module github.com/lukaszraczylo/captcha-solver-mcp
 
 go 1.26.3
 
-require github.com/modelcontextprotocol/go-sdk v1.2.0
+require (
+	github.com/modelcontextprotocol/go-sdk v1.2.0
+	golang.org/x/image v0.41.0
+)
 
 require (
 	github.com/google/jsonschema-go v0.3.0 // indirect
