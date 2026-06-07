@@ -160,9 +160,10 @@ export CAPTCHA_LLM_MODEL=openai/gpt-5.4        # or zai/GLM-4.6V-FlashX, claude-
 ## Testing
 
 ```sh
-make test       # unit tests (go test ./...)
-make e2e        # deterministic stdio end-to-end with a fake LLM (no network)
-make e2e-live   # OPT-IN: live test against a real LLM gateway
+make test         # unit tests (go test ./...)
+make e2e          # deterministic stdio end-to-end with a fake LLM (no network)
+make e2e-live     # OPT-IN: live test against a real LLM gateway
+make e2e-browser  # OPT-IN: live Playwright browser e2e against the 2captcha demo
 ```
 
 The live e2e is gated behind `CAPTCHA_E2E_LIVE=1` and needs a real endpoint:
@@ -174,6 +175,33 @@ CAPTCHA_LLM_BASE_URL=https://your-gateway.example.com/v1 \
 CAPTCHA_LLM_MODEL=openai/gpt-5.4 \
 make e2e-live
 ```
+
+### Browser e2e (Playwright → 2captcha demo)
+
+`make e2e-browser` drives a real Chromium (via Playwright) against the public
+[2captcha demo](https://2captcha.com/demo) and solves captchas through the MCP server +
+a real vision model. It is **network- and browser-gated** (build tags `e2e,live`,
+`CAPTCHA_E2E_LIVE=1`, `node` + an installed Playwright Chromium); the offline `make e2e`
+suite never runs it. Prereqs:
+
+```sh
+npm install
+npx playwright install chromium
+make e2e-browser
+```
+
+Two paths (`test/e2e/playwright/*.mjs`, wrapped by `test/e2e/browser_test.go`):
+
+- **Text captcha (`solve-text.mjs`) — verified end-to-end.** Screenshots the demo's
+  distorted-text image, calls `solve_text_captcha`, types the prediction, clicks *Check*,
+  and asserts the demo's own *"Captcha is passed successfully!"* indicator (ground truth).
+  Retries up to 2 fresh captchas before failing, since OCR is stochastic.
+- **reCAPTCHA v2 (`solve-recaptcha-v2.mjs`) — best-effort.** Applies a stealth script +
+  `generate_fingerprint` profile, clicks the checkbox, then loops `solve_grid_captcha` →
+  `plan_interaction` → humanized clicks over the tile grid, and reads
+  `g-recaptcha-response`. Real Google reCAPTCHA commonly resists headless automation, so
+  this path **logs the outcome and exits 0 even with no token** — it fails only on a real
+  script/transport error.
 
 ## Compatibility notes
 
@@ -193,9 +221,13 @@ Two pieces are **designed but deferred** (see
 [`docs/superpowers/specs/`](./docs/superpowers/specs) and
 [`docs/superpowers/plans/`](./docs/superpowers/plans)):
 
-- **Deterministic browser e2e harness** — driving Playwright Chromium *and* Lightpanda
-  against a local fake-captcha page, to exercise the full brain/hands loop in CI without
-  hitting real sites.
+- **Deterministic (offline) browser e2e harness** — driving Playwright Chromium *and*
+  Lightpanda against a *local* fake-captcha page, to exercise the full brain/hands loop in
+  CI without hitting real sites. A **live** browser harness already exists (`make
+  e2e-browser`, see [Testing](#testing)): it targets the 2captcha demo, is
+  network/browser-gated, verifies the text path end-to-end against the demo's success
+  indicator, and runs the reCAPTCHA v2 path best-effort. The remaining work is the
+  offline, deterministic local-page variant for CI.
 - **Gemini provider** — a stub exists (`internal/llm/gemini.go`); the `generateContent`
   wire format still needs verification against current Google docs before it ships. Use
   `openai` / `openai-compatible` / `anthropic` in the meantime.
