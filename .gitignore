@@ -1,0 +1,6 @@
+node_modules/
+dist/
+*.log
+.env
+bin/
+captcha-solver-mcp
