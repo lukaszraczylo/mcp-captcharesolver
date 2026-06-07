@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -35,6 +36,46 @@ func TestOpenAIVision(t *testing.T) {
 		t.Fatalf("got %q err %v", got, err)
 	}
 }
+func TestOpenAIVisionMaxCompletionTokensRetry(t *testing.T) {
+	var reqCount atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path %s", r.URL.Path)
+		}
+		reqCount.Add(1)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+			return
+		}
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, `"max_tokens"`) && !strings.Contains(bodyStr, `"max_completion_tokens"`) {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"error":{"message":"Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.","type":"invalid_request_error","code":"unsupported_parameter"}}`)
+			return
+		}
+		if strings.Contains(bodyStr, `"max_completion_tokens"`) {
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = io.WriteString(w, `{"error":"unexpected body"}`)
+	}))
+	defer srv.Close()
+
+	c := &openAIClient{http: &http.Client{Timeout: 5 * time.Second}, base: srv.URL, key: "key", model: "gpt-5", maxTokens: 100}
+	got, err := c.Vision(context.Background(), "read", []Image{{MediaType: "image/png", Data: []byte{1}}}, Options{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "ok" {
+		t.Fatalf("got %q, want %q", got, "ok")
+	}
+	if n := reqCount.Load(); n != 2 {
+		t.Fatalf("expected 2 requests, got %d", n)
+	}
+}
+
 
 const maxMultipartMem = 1 << 20 // 1 MiB — bounded, used only in tests
 

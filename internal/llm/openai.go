@@ -43,6 +43,35 @@ func (c *openAIClient) Vision(ctx context.Context, prompt string, images []Image
 		"temperature": opts.Temperature,
 		"messages":    []map[string]any{{"role": "user", "content": content}},
 	}
+
+	b, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	status, raw, err := c.postJSONRaw(ctx, "/v1/chat/completions", b)
+	if err != nil {
+		return "", err
+	}
+
+	// Self-heal: newer OpenAI models reject max_tokens; retry with max_completion_tokens.
+	if status == http.StatusBadRequest && bytes.Contains(raw, []byte("max_completion_tokens")) {
+		reqBody["max_completion_tokens"] = reqBody["max_tokens"]
+		delete(reqBody, "max_tokens")
+		b, err = json.Marshal(reqBody)
+		if err != nil {
+			return "", err
+		}
+		status, raw, err = c.postJSONRaw(ctx, "/v1/chat/completions", b)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	if status >= 300 {
+		return "", fmt.Errorf("openai HTTP %d: %s", status, string(raw))
+	}
+
 	var out struct {
 		Choices []struct {
 			Message struct {
@@ -50,7 +79,7 @@ func (c *openAIClient) Vision(ctx context.Context, prompt string, images []Image
 			} `json:"message"`
 		} `json:"choices"`
 	}
-	if err := c.postJSON(ctx, "/v1/chat/completions", reqBody, &out); err != nil {
+	if err := json.Unmarshal(raw, &out); err != nil {
 		return "", err
 	}
 	if len(out.Choices) == 0 {
@@ -58,6 +87,7 @@ func (c *openAIClient) Vision(ctx context.Context, prompt string, images []Image
 	}
 	return out.Choices[0].Message.Content, nil
 }
+
 
 func (c *openAIClient) Transcribe(ctx context.Context, audio []byte, filename string, opts Options) (string, error) {
 	model := c.audioModel
@@ -116,14 +146,10 @@ func (c *openAIClient) Transcribe(ctx context.Context, audio []byte, filename st
 	return out.Text, nil
 }
 
-func (c *openAIClient) postJSON(ctx context.Context, path string, body, out any) error {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return err
-	}
+func (c *openAIClient) postJSONRaw(ctx context.Context, path string, b []byte) (int, []byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, bytes.NewReader(b))
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.key != "" {
@@ -131,15 +157,15 @@ func (c *openAIClient) postJSON(ctx context.Context, path string, body, out any)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return resp.StatusCode, nil, err
 	}
-	if resp.StatusCode >= 300 {
-		return fmt.Errorf("openai HTTP %d: %s", resp.StatusCode, string(raw))
-	}
-	return json.Unmarshal(raw, out)
+	return resp.StatusCode, raw, nil
 }
+
+
+
