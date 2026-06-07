@@ -51,6 +51,8 @@ type SolveTextIn struct {
 	Hint          string `json:"hint,omitempty"`
 	Charset       string `json:"charset,omitempty"`
 	Length        int    `json:"length,omitempty"`
+	Samples       int    `json:"samples,omitempty" jsonschema:"run N times and majority-vote the text (default 1); costs N× calls"`
+	Upscale       int    `json:"upscale,omitempty" jsonschema:"upscale factor 1-6 before OCR (helps small/blurry text)"`
 	CaseSensitive bool   `json:"case_sensitive,omitempty"`
 }
 
@@ -61,6 +63,7 @@ func (h *Handlers) solveText(ctx context.Context, _ *mcp.CallToolRequest, in Sol
 	}
 	res, err := captcha.SolveText(ctx, h.llm, data, mt, captcha.TextOptions{
 		Hint: in.Hint, Charset: in.Charset, Length: in.Length, CaseSensitive: in.CaseSensitive,
+		Samples: in.Samples, Upscale: in.Upscale,
 	})
 	return nil, res, err
 }
@@ -99,6 +102,9 @@ type SolveGridIn struct {
 	Cols        int    `json:"cols" jsonschema:"grid cols (e.g. 3)"`
 	ImageWidth  int    `json:"image_width,omitempty" jsonschema:"screenshot width in px, enables centroid output"`
 	ImageHeight int    `json:"image_height,omitempty" jsonschema:"screenshot height in px, enables centroid output"`
+	Samples     int    `json:"samples,omitempty" jsonschema:"run N times and majority-vote tiles (default 1; 3 ≈ Success@3); costs N× calls"`
+	Upscale     int    `json:"upscale,omitempty" jsonschema:"upscale factor 1-6 before solving (helps small tiles)"`
+	Annotate    bool   `json:"annotate,omitempty" jsonschema:"overlay numbered grid cells to disambiguate"`
 }
 
 func (h *Handlers) solveGrid(ctx context.Context, _ *mcp.CallToolRequest, in SolveGridIn) (*mcp.CallToolResult, captcha.GridResult, error) {
@@ -109,6 +115,7 @@ func (h *Handlers) solveGrid(ctx context.Context, _ *mcp.CallToolRequest, in Sol
 	res, err := captcha.SolveGrid(ctx, h.llm, data, mt, captcha.GridOptions{
 		Instruction: in.Instruction, CaptchaType: in.CaptchaType,
 		Rows: in.Rows, Cols: in.Cols, ImageWidth: in.ImageWidth, ImageHeight: in.ImageHeight,
+		Samples: in.Samples, Upscale: in.Upscale, Annotate: in.Annotate,
 	})
 	return nil, res, err
 }
