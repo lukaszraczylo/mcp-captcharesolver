@@ -174,8 +174,7 @@ type SolverInfoOut struct {
 }
 
 func (h *Handlers) solverInfo(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, SolverInfoOut, error) {
-	// gemini is a stub; re-add when implemented
-	audio := h.provider == "openai" || h.provider == "openai-compatible"
+	audio := h.provider == "openai" || h.provider == "openai-compatible" || h.provider == "gemini"
 	return nil, SolverInfoOut{
 		Provider: h.provider, Model: h.model,
 		Capabilities: map[string]bool{
