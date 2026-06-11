@@ -61,6 +61,9 @@ Copy `.env.example` as a starting point.
 | `CAPTCHA_LLM_TEMPERATURE` | no | `0` | |
 | `CAPTCHA_LLM_MAX_TOKENS` | no | `1024` | |
 | `CAPTCHA_LLM_TIMEOUT` | no | `60s` | Go duration string |
+| `CAPTCHA_TRANSPORT` | no | `stdio` | `stdio` (MCP over stdin/stdout) or `http` (MCP StreamableHTTP) |
+| `CAPTCHA_HTTP_ADDR` | when `CAPTCHA_TRANSPORT=http` | `:8080` | Listen address for HTTP transport |
+| `CAPTCHA_HTTP_PATH` | when `CAPTCHA_TRANSPORT=http` | `/mcp` | MCP StreamableHTTP endpoint path. `/healthz` is always served. |
 | `CAPTCHA_LOG_LEVEL` | no | `info` | |
 
 > **Keyless gateways:** if you point `CAPTCHA_LLM_BASE_URL` at an OpenAI-compatible gateway
@@ -178,6 +181,36 @@ export CAPTCHA_LLM_API_KEY=sk-...
 export CAPTCHA_LLM_MODEL=openai/gpt-5.4        # or zai/GLM-4.6V-FlashX, claude-opus-4-8, etc.
 ./bin/captcha-solver-mcp
 ```
+
+### HTTP transport (for cluster / gateway deployment)
+
+```sh
+export CAPTCHA_TRANSPORT=http
+export CAPTCHA_HTTP_ADDR=0.0.0.0:8080
+export CAPTCHA_LLM_PROVIDER=openai-compatible
+export CAPTCHA_LLM_BASE_URL=http://agentgateway-proxy.agentgateway-system.svc.cluster.local/v1
+export CAPTCHA_LLM_MODEL=minimax/MiniMax-M3
+./bin/captcha-solver-mcp
+# MCP StreamableHTTP on http://0.0.0.0:8080/mcp
+# Liveness/readiness on http://0.0.0.0:8080/healthz
+```
+
+The HTTP transport runs the server in **stateless** StreamableHTTP mode
+(per-request sessions, no `Mcp-Session-Id` validation), matching the
+`sessionRouting: Stateless` convention used by the other MCP servers in the
+home cluster's `agentgateway-system` namespace. SIGINT / SIGTERM trigger a
+graceful shutdown with a 10 s drain.
+
+The example `BASE_URL` above points at the in-cluster
+`agentgateway-proxy` (which fronts `api.minimax.io` via the `minimax`
+AgentgatewayBackend, holding the upstream auth). No `CAPTCHA_LLM_API_KEY` is
+needed when routing through the in-cluster gateway. Pointing at a public
+endpoint (e.g. `https://llmgw.h.raczylo.com/v1` or `https://api.openai.com/v1`)
+requires a key — see `.env.example`.
+
+Kubernetes manifests that match the cluster's existing MCP server conventions
+(Deployment, Service, `AgentgatewayBackend`) live under
+[`deploy/k8s/`](./deploy/k8s).
 
 ## Maximizing accuracy
 

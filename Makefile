@@ -1,6 +1,8 @@
-.PHONY: build test e2e e2e-live e2e-browser lint tidy
+.PHONY: build test e2e e2e-live e2e-browser run-http lint tidy
 build:
 	go build -o bin/captcha-solver-mcp ./cmd/captcha-solver-mcp
+run-http: build
+	CAPTCHA_TRANSPORT=http CAPTCHA_HTTP_ADDR=:8080 ./bin/captcha-solver-mcp
 test:
 	go test ./...
 e2e:

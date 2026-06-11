@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-captcha-solver
+  namespace: agentgateway-system
+  labels:
+    app.kubernetes.io/name: mcp-captcha-solver
+    app.kubernetes.io/part-of: mcp-servers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mcp-captcha-solver
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mcp-captcha-solver
+        app.kubernetes.io/part-of: mcp-servers
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: mcp
+          image: ghcr.io/lukaszraczylo/mcp-captchasolver:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8085 }
+          env:
+            - { name: CAPTCHA_TRANSPORT, value: "http" }
+            - { name: CAPTCHA_HTTP_ADDR, value: ":8085" }
+            - { name: CAPTCHA_HTTP_PATH, value: "/mcp" }
+            - { name: CAPTCHA_LLM_PROVIDER, value: "openai-compatible" }
+            - { name: CAPTCHA_LLM_BASE_URL, value: "http://agentgateway-proxy.agentgateway-system.svc.cluster.local/v1" }
+            - { name: CAPTCHA_LLM_MODEL, value: "minimax/MiniMax-M3" }
+            - { name: CAPTCHA_LLM_TIMEOUT, value: "120s" }
+            - { name: CAPTCHA_LLM_MAX_TOKENS, value: "2048" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits:   { cpu: 1,   memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
