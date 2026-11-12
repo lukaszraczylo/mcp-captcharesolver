@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	golang.org/x/image v0.47.0
+	golang.org/x/image v0.48.0
 )
 
 require (
